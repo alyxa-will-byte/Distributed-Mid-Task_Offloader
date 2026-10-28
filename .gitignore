@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+relay/node_modules/
+relay/data/
+.pytest_cache/
