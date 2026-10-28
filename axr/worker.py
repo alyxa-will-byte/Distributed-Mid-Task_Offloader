@@ -127,7 +127,7 @@ class Worker:
             beat.cancel()
 
     async def _report(self, sess: Session):
-        await sess.status(sysinfo.status(jobs=sum(1 for j in self.jobs.values() if j.task), max_jobs=self.max_jobs, paused=sess.paused) | {"sandbox": self.sandbox})
+        await sess.status(sysinfo.status(jobs=len(self.jobs), max_jobs=self.max_jobs, paused=sess.paused) | {"sandbox": self.sandbox})
 
     async def _status_loop(self, sess: Session):
         sysinfo.status()  # prime cpu_percent
@@ -144,7 +144,7 @@ class Worker:
         jid = str(d.get("job", ""))[:64]
         reply = lambda kind, payload: sess.send(frm, pk, kind, {"job": jid, **payload})  # noqa: E731
         if k == "job":
-            running = sum(1 for j in self.jobs.values() if j.task)
+            running = len(self.jobs)   # includes jobs still receiving their files
             if sess.paused:
                 return await reply("rejected", {"reason": "this helper is paused"})
             if running >= self.max_jobs or jid in self.jobs:

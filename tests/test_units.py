@@ -67,3 +67,27 @@ def test_scheduler_prefers_idle_and_matching():
     assert names == ["idle", "busy"]
     assert [d["name"] for d in client.candidates(devs, cmd=["python", "x.py"])][0] == "idle"
     assert client.candidates(devs, cmd=["python"], os_="windows") == []
+
+
+def test_helper_counts_jobs_still_receiving_files(tmp_path):
+    """A job waiting for its files must count toward max_jobs, or a busy helper accepts too much."""
+    import asyncio
+
+    from axr.worker import Worker
+
+    class FakeSession:
+        paused = False
+
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, to, pk, kind, payload):
+            self.sent.append((kind, payload))
+
+    w = Worker(Identity.fresh(tmp_path), max_jobs=1)
+    sess = FakeSession()
+    msg = lambda jid: {"kind": "job", "from": "laptop", "from_box_pk": "", "data": {"job": jid, "cmd": ["python"], "n_chunks": 1}}  # noqa: E731
+    asyncio.run(w._handle(sess, msg("a")))
+    asyncio.run(w._handle(sess, msg("b")))
+    assert list(w.jobs) == ["a"]
+    assert sess.sent == [("rejected", {"job": "b", "reason": "this helper is busy"})]
