@@ -1,0 +1,9 @@
+{
+  "name": "axr-relay",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node relay.mjs serve", "test": "node --test test/" },
+  "dependencies": { "ws": "^8.18.0" }
+}

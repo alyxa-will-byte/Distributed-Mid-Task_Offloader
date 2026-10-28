@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "axr-offload"
+version = "0.1.0"
+description = "Send computational tasks from your laptop to your other devices through a relay on alyxrbytes.pro"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["websockets>=13", "pynacl>=1.5", "psutil>=5.9"]
+
+[project.optional-dependencies]
+keyring = ["keyring>=24"]
+test = ["pytest>=8"]
+
+[project.scripts]
+axr = "axr.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["axr"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
