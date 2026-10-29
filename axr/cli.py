@@ -8,6 +8,8 @@
   axr pair [--role worker]             make a one-time pairing code for another device
   axr worker start                     run the helper in this terminal (the service does this for you)
   axr worker install-service           start the helper automatically and keep it running
+  axr desktop setup <helper> [--key K]  install remote desktop on a helper (one admin click there)
+  axr desktop <helper>                 open a remote desktop to it
   axr leave                            unlink this device yourself
 """
 from __future__ import annotations
@@ -142,6 +144,97 @@ def cmd_devices(args):
     sys.exit(asyncio.run(_with_session(ident, go)))
 
 
+def cmd_desktop(args):
+    """axr desktop <helper> | setup <helper> | list | viewer"""
+    from . import desktop
+
+    ident = _ident(args)
+    if ident.role != "controller":
+        sys.exit("Remote desktop is managed from a controller device.")
+    store = desktop.Store(ident.home)
+    what, target = args.what, args.target
+    cfg = dict(ident.extra.get("desktop") or {})
+    if args.server or args.key:
+        cfg.update({k: v for k, v in (("host", args.server), ("key", args.key)) if v})
+        ident.extra["desktop"] = cfg
+        ident.save()
+    host, key = cfg.get("host") or desktop.DEFAULT_HOST, cfg.get("key")
+
+    if what == "list":
+        rows = store.all()
+        if not rows:
+            print("No remote desktops yet. Set one up with: axr desktop setup <helper>")
+        for hid, e in rows.items():
+            print(f"{e.get('name', '?'):<22} RustDesk ID {e.get('rustdesk_id', '?'):<12} server {e.get('host', '?')}  ({hid})")
+        return
+    if what == "viewer":
+        if desktop.viewer_path():
+            print(f"RustDesk is already installed here ({desktop.viewer_path()}).")
+            if not key:
+                return
+        if not key:
+            sys.exit("Give the server key once: axr desktop viewer --key <key from /opt/rustdesk/data/id_ed25519.pub>")
+        try:
+            desktop.install(host=host, key=key, with_password=False, identity=None, progress=lambda t: print(f"[axr] {t}"))
+        except Exception as e:
+            sys.exit(f"[axr] {e}")
+        print("RustDesk is set up on this machine. Open a helper with: axr desktop <helper>")
+        return
+    if what == "setup":
+        if not target:
+            sys.exit("Which helper? axr desktop setup <helper>")
+        if not key:
+            sys.exit("Give the server key once: axr desktop setup <helper> --key <key from /opt/rustdesk/data/id_ed25519.pub>")
+
+        async def go(sess):
+            devs = [d for d in await sess.devices() if d["role"] == "worker"]
+            hit = [d for d in devs if d["name"].lower() == target.lower() or d["id"].startswith(target)]
+            if len(hit) != 1:
+                sys.exit(f"no helper called '{target}' (axr devices lists them)")
+            h = hit[0]
+            if not h["online"]:
+                sys.exit(f"{h['name']} is offline")
+            jid = os.urandom(8).hex()
+            await sess.send(h["id"], h["box_pk"], "desktop", {"job": jid, "host": host, "key": key})
+            print(f"[axr] asking {h['name']} to set up remote desktop (server {host})")
+            print(f"[axr] someone needs to click Yes on the admin prompt on {h['name']}'s screen")
+            end = time.time() + 20 * 60
+            while time.time() < end:
+                try:
+                    m = await asyncio.wait_for(sess.inbox.get(), 30)
+                except asyncio.TimeoutError:
+                    continue
+                k, d = m.get("kind"), m.get("data") or {}
+                if k == "closed":
+                    sys.exit("[axr] lost the connection to the relay")
+                if m.get("from") != h["id"] or d.get("job") != jid:
+                    continue
+                if k == "desktop_progress":
+                    print(f"[axr] {h['name']}: {d.get('text')}")
+                elif k == "desktop_done":
+                    if not d.get("ok"):
+                        sys.exit(f"[axr] {h['name']}: {d.get('error')}")
+                    store.put(h["id"], {"name": h["name"], "rustdesk_id": d["id"], "password": d["password"], "host": host})
+                    print(f"[axr] remote desktop is ready on {h['name']} (RustDesk ID {d['id']}). The password is saved here, never shown.")
+                    if not desktop.viewer_path():
+                        print("[axr] this machine needs RustDesk to view it: axr desktop viewer")
+                    print(f"[axr] open it with: axr desktop {h['name']}")
+                    return 0
+            sys.exit("[axr] no answer from the helper after 20 minutes")
+
+        sys.exit(asyncio.run(_with_session(ident, go)))
+    # axr desktop <helper>: open the session
+    hit = store.find(what)
+    if not hit:
+        sys.exit(f"No remote desktop for '{what}'. Set it up with: axr desktop setup {what}")
+    exe = desktop.viewer_path()
+    if not exe:
+        sys.exit("RustDesk isn't installed on this machine. Run: axr desktop viewer")
+    _, e = hit
+    desktop.open_session(exe, e["rustdesk_id"], e["password"])
+    print(f"Opening {e['name']} (RustDesk ID {e['rustdesk_id']})")
+
+
 def cmd_pair(args):
     ident = _ident(args)
 
@@ -259,6 +352,14 @@ def main(argv=None):
     s.add_argument("action", nargs="?", default="list", choices=["list", "pause", "resume", "disconnect", "remove"])
     s.add_argument("target", nargs="?")
     s.set_defaults(fn=cmd_devices)
+
+    s = sub.add_parser("desktop", help="remote desktop to a helper (RustDesk on your own server)",
+                       description="axr desktop <helper>  |  axr desktop setup <helper> [--key KEY] [--server HOST]  |  axr desktop list  |  axr desktop viewer")
+    s.add_argument("what", help="a helper name to open it, or: setup, list, viewer")
+    s.add_argument("target", nargs="?", help="the helper, for setup")
+    s.add_argument("--server", help="your RustDesk server (default rd.alyxrbytes.pro); remembered")
+    s.add_argument("--key", help="your RustDesk server key (/opt/rustdesk/data/id_ed25519.pub); remembered")
+    s.set_defaults(fn=cmd_desktop)
 
     s = sub.add_parser("pair", help="make a pairing code for another device")
     s.add_argument("--role", choices=["worker", "controller"], default="worker")

@@ -38,3 +38,20 @@ jobs:
       - run: npm ci
         working-directory: relay
       - run: python installer/ci_check.py
+
+  desktop:
+    # Installs the real RustDesk through `axr desktop setup` on a Windows machine, then removes the helper and checks
+    # remote desktop is switched off.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: npm ci
+        working-directory: relay
+      - run: pip install -e .
+      - run: python installer/ci_desktop.py
+        env:
+          AXR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

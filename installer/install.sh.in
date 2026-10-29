@@ -29,7 +29,7 @@ if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "$TMP/$WHEEL" | c
 [ "$GOT" = "$SHA256" ] || die "download check failed (SHA-256 mismatch); nothing was installed"
 
 say "Installing"
-uv tool install --quiet --force "$TMP/$WHEEL" || die "install failed"
+uv tool install --quiet --force --reinstall "$TMP/$WHEEL" || die "install failed"
 BIN="$(uv tool dir --bin)"; PATH="$BIN:$PATH"
 uv tool update-shell >/dev/null 2>&1 || true
 say "Installed: $BIN/axr"
