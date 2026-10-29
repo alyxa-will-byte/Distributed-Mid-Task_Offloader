@@ -17,6 +17,7 @@ def test_setup_script_sets_password_and_guard(tmp_path):
                              result=tmp_path / "r.json", guard=(tmp_path / "g.ps1", desktop.guard_script(tmp_path / "identity.json")))
     assert "--silent-install" in s and "--password 'pw123'" in s and "--get-id" in s
     assert "axr-desktop-guard" in s and "/RU SYSTEM" in s
+    assert "-Wait" not in s   # Start-Process -Wait would hang: it waits for RustDesk itself, which keeps running
     viewer = desktop.setup_script(installer=tmp_path / "i.exe", config="c", password=None, result=tmp_path / "r.json", guard=None)
     assert "--password" not in viewer and "schtasks" not in viewer
 

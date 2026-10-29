@@ -78,12 +78,14 @@ def setup_script(*, installer: Path, config: str, password: str | None, result: 
 try {{
   $exe = Join-Path $env:ProgramFiles 'RustDesk\\rustdesk.exe'
   if (-not (Test-Path $exe)) {{
-    Start-Process -FilePath {_ps(installer)} -ArgumentList '--silent-install' -Wait
+    # No -Wait: it also waits for every process the installer starts, and RustDesk starts itself and keeps running.
+    Start-Process -FilePath {_ps(installer)} -ArgumentList '--silent-install'
     for ($i = 0; $i -lt 90 -and -not (Test-Path $exe); $i++) {{ Start-Sleep -Seconds 2 }}
     if (-not (Test-Path $exe)) {{ throw 'RustDesk did not install' }}
   }}
   $svc = Get-Service -Name RustDesk -ErrorAction SilentlyContinue
-  if (-not $svc) {{ Start-Process -FilePath $exe -ArgumentList '--install-service' -Wait; Start-Sleep -Seconds 10 }}
+  if (-not $svc) {{ Start-Process -FilePath $exe -ArgumentList '--install-service'
+    for ($i = 0; $i -lt 30 -and -not (Get-Service -Name RustDesk -ErrorAction SilentlyContinue); $i++) {{ Start-Sleep -Seconds 2 }} }}
   Set-Service -Name RustDesk -StartupType Automatic
   for ($i = 0; $i -lt 30 -and (Get-Service -Name RustDesk).Status -ne 'Running'; $i++) {{
     Start-Service -Name RustDesk -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }}
