@@ -42,6 +42,15 @@ def wait(fn, what, timeout=90):
     raise SystemExit(f"FAIL: timed out waiting for {what}")
 
 
+def win_autostart() -> str | None:
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run") as k:
+            return winreg.QueryValueEx(k, "axr-worker")[0]
+    except OSError:
+        return None
+
+
 def main() -> int:
     subprocess.run([sys.executable, str(ROOT / "installer" / "build.py")], check=True)
     site = ROOT / "dist" / "site"
@@ -77,12 +86,19 @@ def main() -> int:
         if not (home / "identity.json").exists():
             raise SystemExit("FAIL: not paired")
         wait(lambda: any(d["online"] for d in api("GET", "/admin/devices")["devices"]), "the background service to bring the helper online")
+        if sys.platform == "win32":
+            if not win_autostart():
+                raise SystemExit("FAIL: the helper is not set to start at sign-in (HKCU Run key missing)")
+            print("PASS: set to start at sign-in")
         dev = api("GET", "/admin/devices")["devices"][0]
         print(f"PASS: installed, paired and online as {dev['name']} ({dev['os']}) in {time.time() - t:.1f}s")
 
         api("POST", f"/admin/devices/{dev['id']}/remove")
         wait(lambda: not (home / "identity.json").exists(), "the removed helper to wipe itself", timeout=30)
         print("PASS: removed from the relay and the helper wiped its keys")
+        if sys.platform == "win32":
+            wait(lambda: not win_autostart(), "the sign-in entry to be removed", timeout=30)
+            print("PASS: sign-in entry removed")
         return 0
     finally:
         relay.terminate()

@@ -11,6 +11,7 @@ from pathlib import Path
 from .identity import default_home
 
 NAME = "axr-worker"
+WIN_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 LABEL = "pro.alyxrbytes.axr-worker"
 
 
@@ -34,10 +35,13 @@ def install(home: Path | None = None) -> str:
     home = Path(home or default_home())
     cmd = _cmd(home)
     if sys.platform == "win32":
-        tr = subprocess.list2cmdline(cmd)
-        subprocess.run(["schtasks", "/Create", "/TN", NAME, "/TR", tr, "/SC", "ONLOGON", "/RL", "LIMITED", "/F"], check=True, capture_output=True)
-        subprocess.run(["schtasks", "/Run", "/TN", NAME], capture_output=True)
-        return "Installed a Windows task that starts the helper when you sign in (and started it now)."
+        # The per-user Run key needs no admin rights (an ONLOGON scheduled task does, so it failed for normal accounts).
+        import winreg
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, WIN_RUN_KEY) as k:
+            winreg.SetValueEx(k, NAME, 0, winreg.REG_SZ, subprocess.list2cmdline(cmd))
+        subprocess.run(["schtasks", "/Delete", "/TN", NAME, "/F"], capture_output=True)   # an older install's task, if any
+        start_detached(cmd, home / "worker.log")
+        return "Set the helper to start whenever you sign in (no admin needed) and started it now, with no window."
     if sys.platform == "darwin":
         p = _plist()
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -105,7 +109,14 @@ def _install_cron(cmd: list[str], home: Path) -> str:
 
 
 def start_detached(cmd: list[str], log: Path):
-    """Starts the helper in the background now. A second copy exits on its own (see worker.single_instance)."""
+    """Starts the helper in the background now; it outlives the window that started it.
+    A second copy exits on its own (see worker.single_instance)."""
+    log.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        # The helper logs to worker.log itself; no console, and not tied to the installer's window.
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
+        return
     with open(log, "ab") as out:
         subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=out, start_new_session=True, close_fds=True)
 
@@ -117,8 +128,14 @@ def _q(a: str) -> str:
 def uninstall(quiet: bool = False) -> str:
     run = lambda *a: subprocess.run(list(a), capture_output=True)  # noqa: E731
     if sys.platform == "win32":
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, WIN_RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+                winreg.DeleteValue(k, NAME)
+        except OSError:
+            pass
         run("schtasks", "/Delete", "/TN", NAME, "/F")
-        return "Removed the Windows task."
+        return "Removed the helper from Windows sign-in."
     if sys.platform == "darwin":
         p = _plist()
         if p.exists():
