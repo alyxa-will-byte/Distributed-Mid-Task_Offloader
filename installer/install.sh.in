@@ -1,0 +1,41 @@
+#!/bin/sh
+# axr installer for Linux and macOS:   curl -fsSL https://alyxrbytes.pro/axr.sh | sh
+# With a code ready:                    curl -fsSL https://alyxrbytes.pro/axr.sh | AXR_CODE=amber-oak-river-sage-tide-wren sh
+# Installs uv (a fast Python installer, which also fetches Python if this machine has none), checks the axr package's
+# SHA-256 against the value baked in below, installs it for this user only (no sudo), then opens the guided setup.
+set -eu
+BASE="${AXR_BASE:-https://alyxrbytes.pro/axr}"
+VERSION="@VERSION@"
+WHEEL="axr_offload-$VERSION-py3-none-any.whl"
+SHA256="@SHA256@"
+
+say() { printf '\033[1;35m>\033[0m %s\n' "$1"; }
+die() { printf '\033[1;31mx\033[0m %s\n' "$1" >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || die "curl is needed"
+
+if ! command -v uv >/dev/null 2>&1; then
+  if [ -x "$HOME/.local/bin/uv" ]; then PATH="$HOME/.local/bin:$PATH"
+  else
+    say "Installing uv (fast Python installer)"
+    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || die "could not install uv"
+    PATH="$HOME/.local/bin:$PATH"
+  fi
+fi
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+say "Downloading axr $VERSION"
+curl -fsSL "$BASE/$WHEEL" -o "$TMP/$WHEEL" || die "download failed: $BASE/$WHEEL"
+if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "$TMP/$WHEEL" | cut -d' ' -f1)"; else GOT="$(shasum -a 256 "$TMP/$WHEEL" | cut -d' ' -f1)"; fi
+[ "$GOT" = "$SHA256" ] || die "download check failed (SHA-256 mismatch); nothing was installed"
+
+say "Installing"
+uv tool install --quiet --force "$TMP/$WHEEL" || die "install failed"
+BIN="$(uv tool dir --bin)"; PATH="$BIN:$PATH"
+uv tool update-shell >/dev/null 2>&1 || true
+say "Installed: $BIN/axr"
+
+if [ -n "${AXR_SKIP_SETUP:-}" ]; then say "Run 'axr' to pair this machine"; exit 0; fi
+# stdin is this script (curl | sh), so give the setup screen the keyboard back when there is one
+if [ -r /dev/tty ] && (exec </dev/tty) 2>/dev/null; then exec axr setup ${AXR_CODE:+--code "$AXR_CODE"} ${AXR_RELAY:+--relay "$AXR_RELAY"} </dev/tty; fi
+if [ -n "${AXR_CODE:-}" ]; then exec axr setup --code "$AXR_CODE" --yes ${AXR_RELAY:+--relay "$AXR_RELAY"} </dev/null; fi
+say "Run 'axr' to pair this machine"

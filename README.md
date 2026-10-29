@@ -20,40 +20,54 @@ It runs **commands**: Python and Node scripts, ffmpeg, Blender CLI renders, buil
 It can't move an app that's already running on your laptop to another machine. No operating system can do that. For whole desktop apps the plan is a remote workstation: the app runs on a helper and you see it over remote desktop (a later phase).
 
 ## Set up
-### 1. The relay (once, on the KVM 2)
+### Install on any device (one line)
+Windows (PowerShell):
+```powershell
+irm https://alyxrbytes.pro/axr.ps1 | iex
+```
+Mac / Linux:
+```bash
+curl -fsSL https://alyxrbytes.pro/axr.sh | sh
+```
+No admin rights, no Python needed beforehand, about 10–30 seconds. The script:
+1. installs `uv` (a fast Python installer that also fetches Python if the machine has none)
+2. downloads the `axr` package and checks its SHA-256 against the value baked into the script, refusing anything that doesn't match
+3. installs it for this user only
+4. opens the setup screen
+
+The setup screen scans the machine (CPU, RAM, GPU, tools) and asks for the six-word pairing code. It catches typos ("did you mean 'river'?"), pairs the machine and starts the background service:
+- **Windows:** a task that starts at sign-in, with no window.
+- **Linux:** a systemd user service, falling back to cron when there's no systemd session.
+- **Mac:** a LaunchAgent.
+
+With a code ready, skip the question:
+```powershell
+$env:AXR_CODE='amber-oak-river-sage-tide-wren'; irm https://alyxrbytes.pro/axr.ps1 | iex
+```
+```bash
+curl -fsSL https://alyxrbytes.pro/axr.sh | AXR_CODE=amber-oak-river-sage-tide-wren sh
+```
+Run `axr` any time to reopen the setup screen: check the connection, reinstall the service, or unlink.
+
+### The relay (once, on the KVM 2)
 ```bash
 scp -r relay root@<kvm2>:/root/axr-relay
 ssh root@<kvm2> 'cd /root/axr-relay && bash install.sh relay.alyxrbytes.pro'
 ```
 DNS: an A record `relay` → the KVM 2 IP, the same as `qi` and `live`. Back up `/opt/axr-relay/data`: it holds the device list.
 
-### 2. Your laptop (the controller)
-```bash
-pipx install git+https://github.com/alyxa-will-byte/Distributed-Mid-Task_Offloader
-```
-Get a code on the KVM 2:
+### Your laptop first
+Get a controller code on the KVM 2:
 ```bash
 cd /opt/axr-relay && docker compose exec relay node relay.mjs pair controller
 ```
-Then on the laptop:
-```bash
-axr join <code>
-```
+Run the installer on the laptop and enter that code. After that, make codes for helpers on the laptop with `axr pair`.
 
-### 3. Each helper
-On the laptop, run `axr pair` to get a code. Then on the helper (Windows, Linux or Mac, with Python 3.10+):
+### Publishing a new version
 ```bash
-pipx install git+https://github.com/alyxa-will-byte/Distributed-Mid-Task_Offloader
+python installer/build.py
 ```
-```bash
-axr join <code>
-```
-`join` also installs a background service, so the helper starts on its own and stays connected:
-- **Windows:** a task that starts at sign-in, with no window.
-- **Linux:** a systemd user service.
-- **Mac:** a LaunchAgent.
-
-Add `--sandbox docker` on a helper with Docker to run every job in a locked-down container.
+This builds `dist/site/` (the package and both scripts, with the fingerprint filled in). Copy it to `axr/` in the alyxrbytes.pro repo.
 
 ## Use
 ```bash

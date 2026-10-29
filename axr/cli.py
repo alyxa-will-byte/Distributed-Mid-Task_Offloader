@@ -1,5 +1,6 @@
 """axr command line.
 
+  axr                                  guided setup (the installer opens this)
   axr join <code>                      pair this device (code from Admin > Devices, or `axr pair` on your laptop)
   axr run [options] -- <command ...>   run a command on the best free helper; output streams here, out/ comes back
   axr devices                          list paired devices (online/offline, paused, load)
@@ -15,12 +16,14 @@ import argparse
 import asyncio
 import logging
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
 
 from . import __version__, client, service, sysinfo
 from .identity import Identity, default_home
+from .pairing import check_code, pair_sync
 from .transport import RelayError, Removed, Session
 
 DEFAULT_RELAY = os.environ.get("AXR_RELAY", "wss://relay.alyxrbytes.pro")
@@ -63,21 +66,16 @@ def cmd_join(args):
     old = Identity.load(args.home)
     if old and old.id:
         sys.exit(f"This device is already paired as '{old.name}' ({old.role}). Run `axr leave` first to pair it again.")
-    ident = Identity.fresh(Path(args.home or default_home()))
     relay = args.relay or DEFAULT_RELAY
-
-    async def go():
-        try:
-            sess = await Session.open(ident, join_code=args.code, name=args.name, relay=relay)
-        except RelayError as e:
-            sys.exit(f"Pairing failed: {e}")
-        ident.relay = relay
-        if ident.role == "worker":
-            ident.extra["worker"] = {"sandbox": args.sandbox, "max_jobs": args.max_jobs}
-        ident.save()
-        await sess.close()
-
-    asyncio.run(go())
+    code, problems = check_code(args.code)
+    if not code:
+        sys.exit("That code doesn't look right: " + "; ".join(problems))
+    try:
+        ident = pair_sync(Path(args.home or default_home()), code, relay, name=args.name, sandbox=args.sandbox, max_jobs=args.max_jobs)
+    except RelayError as e:
+        sys.exit(f"Pairing failed: {e}")
+    except OSError as e:
+        sys.exit(f"Cannot reach the relay at {relay}: {e}")
     print(f"Paired as '{ident.name}' ({ident.role}) with {relay}. This stays paired until you remove it.")
     if ident.role == "worker":
         if args.no_service:
@@ -87,6 +85,12 @@ def cmd_join(args):
                 print(service.install(ident.home))
             except Exception as e:
                 print(f"Could not install the background service ({e}). Start it by hand with: axr worker start")
+
+
+def cmd_setup(args):
+    from .setup import run
+    sys.exit(run(args.home, code=args.code, relay=args.relay or DEFAULT_RELAY, name=args.name, sandbox=args.sandbox,
+                 max_jobs=args.max_jobs, install_service=not args.no_service, assume_yes=args.yes))
 
 
 def cmd_run(args):
@@ -186,12 +190,20 @@ def cmd_worker(args):
     if args.wcmd == "install-service":
         return print(service.install(ident.home))
     handlers = [logging.FileHandler(ident.home / "worker.log")]
-    if sys.stderr is not None:   # pythonw (the Windows service) has no console
+    if sys.stderr is not None and sys.stderr.isatty():   # services log to the file only (pythonw has no console at all)
         handlers.append(logging.StreamHandler())
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", handlers=handlers)
-    from .worker import run
+    from .worker import run, single_instance
+    lock = single_instance(ident.home)
+    if lock is None:
+        print("The helper is already running on this machine.")
+        return
     result = run(ident, max_jobs=args.max_jobs, sandbox=args.sandbox)
     if result == "removed":
+        # Windows cannot delete open files, so let go of the log and lock, then clear the folder again.
+        logging.shutdown()
+        lock.close()
+        shutil.rmtree(ident.home, ignore_errors=True)
         print("This helper was removed by its owner; its keys and files were deleted.")
 
 
@@ -199,7 +211,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="axr", description="Send tasks from your laptop to your other devices.")
     p.add_argument("--home", help=argparse.SUPPRESS)
     p.add_argument("--version", action="version", version=f"axr {__version__}")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
 
     def join_args(s):
         s.add_argument("code")
@@ -208,6 +220,16 @@ def main(argv=None):
         s.add_argument("--sandbox", choices=["process", "docker"], default="process", help="helpers only: how jobs are isolated")
         s.add_argument("--max-jobs", type=int, help="helpers only: jobs at once")
         s.add_argument("--no-service", action="store_true", help="helpers only: do not install the background service")
+
+    s = sub.add_parser("setup", help="guided setup: scan this machine and pair it")
+    s.add_argument("--code", help="pairing code (otherwise asked for; AXR_CODE also works)")
+    s.add_argument("--relay", help=f"relay address (default {DEFAULT_RELAY})")
+    s.add_argument("--name", help="name for this device")
+    s.add_argument("--sandbox", choices=["process", "docker"], default="process")
+    s.add_argument("--max-jobs", type=int)
+    s.add_argument("--no-service", action="store_true")
+    s.add_argument("--yes", action="store_true", help="no questions when --code is given")
+    s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("join", help="pair this device")
     join_args(s)
@@ -255,7 +277,10 @@ def main(argv=None):
     ws.add_parser("leave")
     w.set_defaults(fn=cmd_worker)
 
+    argv = sys.argv[1:] if argv is None else argv
     args = p.parse_args(argv)
+    if not args.cmd:   # plain `axr`: open the guided setup
+        args = p.parse_args([*argv, "setup"])
     args.fn(args)
 
 

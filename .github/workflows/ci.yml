@@ -20,3 +20,21 @@ jobs:
         working-directory: relay
       - run: pip install -e ".[test]"
       - run: python -m pytest -q
+
+  installer:
+    # Runs the real one-line installer, the background service and removal on each OS.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+        working-directory: relay
+      - run: python installer/ci_check.py

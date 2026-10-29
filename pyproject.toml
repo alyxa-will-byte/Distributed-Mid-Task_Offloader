@@ -9,7 +9,7 @@ description = "Send computational tasks from your laptop to your other devices t
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-dependencies = ["websockets>=13", "pynacl>=1.5", "psutil>=5.9"]
+dependencies = ["websockets>=13", "pynacl>=1.5", "psutil>=5.9", "rich>=13"]
 
 [project.optional-dependencies]
 keyring = ["keyring>=24"]

@@ -297,6 +297,23 @@ class Worker:
         self.jobs.clear()
 
 
+def single_instance(home: Path):
+    """Holds a lock while this helper runs, so two copies never fight over the same identity. None if already held."""
+    f = open(home / "worker.lock", "a+")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
 def run(ident: Identity, **kw) -> str:
     w = Worker(ident, **kw)
 
