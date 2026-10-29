@@ -78,7 +78,7 @@ def setup_script(*, installer: Path, config: str, password: str | None, result: 
 try {{
   $exe = Join-Path $env:ProgramFiles 'RustDesk\\rustdesk.exe'
   if (-not (Test-Path $exe)) {{
-    # No -Wait: it also waits for every process the installer starts, and RustDesk starts itself and keeps running.
+    # Do not wait on the process: that also waits for everything it starts, and RustDesk starts itself and keeps running.
     Start-Process -FilePath {_ps(installer)} -ArgumentList '--silent-install'
     for ($i = 0; $i -lt 90 -and -not (Test-Path $exe); $i++) {{ Start-Sleep -Seconds 2 }}
     if (-not (Test-Path $exe)) {{ throw 'RustDesk did not install' }}
