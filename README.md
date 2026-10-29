@@ -36,7 +36,7 @@ No admin rights, no Python needed beforehand, about 10–30 seconds. The script:
 4. opens the setup screen
 
 The setup screen scans the machine (CPU, RAM, GPU, tools) and asks for the six-word pairing code. It catches typos ("did you mean 'river'?"), pairs the machine and starts the background service:
-- **Windows:** a task that starts at sign-in, with no window.
+- **Windows:** starts whenever you sign in (a per-user sign-in entry, so no admin rights needed), with no window.
 - **Linux:** a systemd user service, falling back to cron when there's no systemd session.
 - **Mac:** a LaunchAgent.
 
