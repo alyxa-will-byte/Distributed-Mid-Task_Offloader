@@ -40,7 +40,11 @@ try {
 
 $bin = (uv tool dir --bin)
 $env:Path = "$bin;$env:Path"
-uv tool update-shell *> $null
+# Windows PowerShell 5.1 turns a native program's stderr into a fatal error under 'Stop' when it is redirected,
+# and uv prints ordinary notes there ("Updated PATH ..."), so relax it for this one call.
+$ErrorActionPreference = 'Continue'
+uv tool update-shell 2>&1 | Out-Null
+$ErrorActionPreference = 'Stop'
 Say "Installed: $bin\axr.exe"
 
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
