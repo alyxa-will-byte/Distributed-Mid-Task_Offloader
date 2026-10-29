@@ -1,0 +1,54 @@
+# axr installer for Windows (PowerShell):   irm https://alyxrbytes.pro/axr.ps1 | iex
+# With a code ready:   $env:AXR_CODE='amber-oak-river-sage-tide-wren'; irm https://alyxrbytes.pro/axr.ps1 | iex
+# Installs uv (a fast Python installer, which also fetches Python if this machine has none), checks the axr package's
+# SHA-256 against the value baked in below, installs it for this user only (no admin), then opens the guided setup.
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$Base = if ($env:AXR_BASE) { $env:AXR_BASE } else { 'https://alyxrbytes.pro/axr' }
+$Version = '@VERSION@'
+$Wheel = "axr_offload-$Version-py3-none-any.whl"
+$Sha256 = '@SHA256@'
+
+function Say($m) { Write-Host '> ' -ForegroundColor Magenta -NoNewline; Write-Host $m }
+function Die($m) { Write-Host "x $m" -ForegroundColor Red; throw $m }
+
+$localBin = Join-Path $env:USERPROFILE '.local\bin'
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+  if (Test-Path (Join-Path $localBin 'uv.exe')) { $env:Path = "$localBin;$env:Path" }
+  else {
+    Say 'Installing uv (fast Python installer)'
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" | Out-Null
+    $env:Path = "$localBin;$env:Path"
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { Die 'could not install uv' }
+  }
+}
+
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Path $tmp | Out-Null
+try {
+  Say "Downloading axr $Version"
+  $file = Join-Path $tmp $Wheel
+  Invoke-WebRequest "$Base/$Wheel" -OutFile $file -UseBasicParsing
+  # .NET directly: Get-FileHash is missing in some PowerShell sessions (e.g. 5.1 started from PowerShell 7)
+  $stream = [IO.File]::OpenRead($file)
+  try { $got = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) } finally { $stream.Dispose() }
+  if ($got -ne $Sha256) { Die 'download check failed (SHA-256 mismatch); nothing was installed' }
+  Say 'Installing'
+  uv tool install --quiet --force $file
+  if ($LASTEXITCODE -ne 0) { Die 'install failed' }
+} finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
+
+$bin = (uv tool dir --bin)
+$env:Path = "$bin;$env:Path"
+# Windows PowerShell 5.1 turns a native program's stderr into a fatal error under 'Stop' when it is redirected,
+# and uv prints ordinary notes there ("Updated PATH ..."), so relax it for this one call.
+$ErrorActionPreference = 'Continue'
+uv tool update-shell 2>&1 | Out-Null
+$ErrorActionPreference = 'Stop'
+Say "Installed: $bin\axr.exe"
+
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = 'utf-8'
+if ($env:AXR_SKIP_SETUP) { Say "Run 'axr' to pair this machine"; return }
+$relayArgs = @(); if ($env:AXR_RELAY) { $relayArgs = @('--relay', $env:AXR_RELAY) }
+if ($env:AXR_CODE) { axr setup --code $env:AXR_CODE @relayArgs } else { axr setup @relayArgs }
