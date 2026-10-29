@@ -163,6 +163,32 @@ class Worker:
             j = self.jobs.get(jid)
             if j and j.controller == frm:
                 await self._cancel(j)
+        elif k == "desktop":
+            if sess.paused:
+                return await reply("desktop_done", {"ok": False, "error": "this helper is paused"})
+            asyncio.create_task(self._desktop(sess, frm, pk, jid, d))
+
+    async def _desktop(self, sess: Session, frm: str, pk: str, jid: str, d: dict):
+        """Remote desktop setup (see desktop.py). The admin prompt appears on this helper's own screen."""
+        from . import desktop
+
+        loop = asyncio.get_running_loop()
+        send = lambda kind, payload: sess.send(frm, pk, kind, {"job": jid, **payload})  # noqa: E731
+
+        def progress(text: str):
+            asyncio.run_coroutine_threadsafe(send("desktop_progress", {"text": text}), loop)
+
+        try:
+            host, key = str(d.get("host", ""))[:200], str(d.get("key", ""))[:200]
+            r = await asyncio.to_thread(desktop.install, host=host, key=key, with_password=True,
+                                        identity=self.ident.home / "identity.json", progress=progress)
+            await send("desktop_done", {"ok": True, "helper": self.ident.name, **r})
+        except Exception as e:
+            log.warning("remote desktop setup failed: %s", e)
+            try:
+                await send("desktop_done", {"ok": False, "error": str(e) or e.__class__.__name__})
+            except Exception:
+                pass
 
     def _start(self, sess: Session, j: Job):
         j.task = asyncio.create_task(self._run(sess, j))

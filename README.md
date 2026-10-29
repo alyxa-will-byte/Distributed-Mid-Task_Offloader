@@ -79,6 +79,26 @@ axr run --no-local -- ...                     # never fall back to running here
 ```
 Put big or private files you don't want sent in `.axrignore` (same idea as `.gitignore`). `.git`, `node_modules`, virtualenvs and `out/` are never sent.
 
+## Remote desktop (Windows helpers)
+Uses RustDesk with your own server on the KVM (`/opt/rustdesk`, `rd.alyxrbytes.pro`), so sessions never go through anyone else's servers.
+```bat
+axr desktop setup TronaldsDump --key <contents of /opt/rustdesk/data/id_ed25519.pub>
+axr desktop viewer
+axr desktop TronaldsDump
+axr desktop list
+```
+- **`setup`** makes the helper download the official RustDesk installer and show **one admin prompt on its own screen**. Someone has to click Yes; Windows doesn't allow any program to approve that remotely. The helper then:
+  - installs RustDesk as a service, so it works at the login screen and after restarts
+  - points it at your server
+  - sets a random permanent password
+  - sends the RustDesk ID and password back over the encrypted channel
+
+  The controller stores them in `desktops.json`, readable only by you. The key and server are remembered after the first use.
+- **`viewer`** installs and configures RustDesk on the controller (one admin prompt there).
+- **`axr desktop <helper>`** opens the session with the password filled in.
+- **Unlinking a helper** (`axr devices remove` or `axr leave`) also turns its remote desktop off within 5 minutes. A small system task changes RustDesk's password to an unknown one and disables the service once the pairing is gone.
+- **Mac and Linux helpers:** install RustDesk by hand for now, since it needs sudo or a privacy approval.
+
 ## Devices
 ```bash
 axr devices                       # online / offline (last seen), paused, load, jobs
