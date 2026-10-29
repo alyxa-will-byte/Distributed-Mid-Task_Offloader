@@ -91,3 +91,17 @@ def test_helper_counts_jobs_still_receiving_files(tmp_path):
     asyncio.run(w._handle(sess, msg("b")))
     assert list(w.jobs) == ["a"]
     assert sess.sent == [("rejected", {"job": "b", "reason": "this helper is busy"})]
+
+
+def test_removed_helper_wipes_before_removing_its_service(tmp_path, monkeypatch):
+    """Removing the service can stop the helper process itself (launchd does), so the keys must already be gone."""
+    from axr import service
+    from axr.worker import Worker
+
+    ident = Identity.fresh(tmp_path / "home")
+    ident.id = "abc"
+    ident.save()
+    order = []
+    monkeypatch.setattr(service, "uninstall", lambda quiet=False: order.append(("uninstall", (ident.home / "identity.json").exists())))
+    assert Worker(ident)._removed() == "removed"
+    assert order == [("uninstall", False)]

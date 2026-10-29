@@ -184,7 +184,11 @@ def cmd_worker(args):
         return cmd_leave(args)
     if args.wcmd == "uninstall-service":
         return print(service.uninstall())
-    ident = _ident(args)
+    ident = Identity.load(args.home)
+    if not ident or not ident.id:
+        # Exit 0: a service manager must not keep restarting a helper that was unlinked.
+        print("This device is not paired (or was removed). Run: axr join <code>")
+        return
     if ident.role != "worker":
         sys.exit("This device is paired as a controller, not a helper.")
     if args.wcmd == "install-service":

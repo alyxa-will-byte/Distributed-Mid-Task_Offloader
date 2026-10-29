@@ -68,7 +68,8 @@ ENV = {**os.environ, "AXR_NO_KEYRING": "1", "PYTHONUNBUFFERED": "1"}
 
 
 def axr(home: Path, *args, cwd=None, timeout=60, check=False):
-    r = subprocess.run([sys.executable, "-m", "axr", "--home", str(home), *args], cwd=cwd, env=ENV, capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run([sys.executable, "-m", "axr", "--home", str(home), *args], cwd=cwd, env=ENV, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=timeout)
     if check and r.returncode:
         raise AssertionError(f"axr {args} failed ({r.returncode}):\n{r.stdout}\n{r.stderr}")
     return r

@@ -8,6 +8,11 @@ from conftest import ENV, ROOT, axr
 from axr.pairing import WORDS, check_code, fix_code
 
 
+def flat(text: str) -> str:
+    """The screen's text with line wrapping and panel borders removed, so checks don't depend on terminal width."""
+    return " ".join(text.replace("│", " ").split())
+
+
 def test_code_words_match_the_relay():
     src = (ROOT / "relay" / "relay.mjs").read_text()
     m = re.search(r"const WORDS = \((.*?)\)\.split", src, re.S)
@@ -34,26 +39,26 @@ def test_setup_screen_pairs_and_fixes_a_typo(relay, tmp_path):
     code = relay.code("worker")
     words = code.split("-")
     typo = " ".join([words[0] + "x", *words[1:]])
-    r = subprocess.run([sys.executable, "-m", "axr", "--home", str(tmp_path / "h"), "setup", "--relay", relay.url, "--no-service"],
-                       input=f"1\n{typo}\ny\n", env={**ENV, "AXR_NO_ANIM": "1"}, capture_output=True, text=True, timeout=60)
+    r = subprocess.run([sys.executable, "-m", "axr", "--home", str(tmp_path / "h"), "setup", "--relay", relay.url, "--no-service", "--name", "box1"],
+                       input=f"1\n{typo}\ny\n", env={**ENV, "AXR_NO_ANIM": "1"}, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "did you mean" in r.stdout and "is now a helper" in r.stdout
+    assert "did you mean" in flat(r.stdout) and "box1 is now a helper" in flat(r.stdout), r.stdout
     assert (tmp_path / "h" / "identity.json").exists()
     # Opening it again shows the paired menu instead of asking for a code.
     r = subprocess.run([sys.executable, "-m", "axr", "--home", str(tmp_path / "h")], input="q\n", env={**ENV, "AXR_NO_ANIM": "1"},
-                       capture_output=True, text=True, timeout=60)
-    assert "already paired" in r.stdout
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    assert "already paired" in flat(r.stdout), r.stdout
 
 
 def test_setup_unattended_with_code(relay, tmp_path):
-    r = axr(tmp_path / "h", "setup", "--code", relay.code("controller"), "--yes", "--relay", relay.url)
+    r = axr(tmp_path / "h", "setup", "--code", relay.code("controller"), "--yes", "--relay", relay.url, "--name", "lap1")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "is your controller" in r.stdout
+    assert "lap1 is your controller" in flat(r.stdout), r.stdout
 
 
 def test_setup_unattended_bad_code_fails_cleanly(relay, tmp_path):
     r = axr(tmp_path / "h", "setup", "--code", "amber-oak-river-sage-tide-wren", "--yes", "--relay", relay.url)
-    assert r.returncode != 0 and "wrong or expired" in r.stdout
+    assert r.returncode != 0 and "wrong or expired" in flat(r.stdout), r.stdout
     assert not (Path(tmp_path / "h") / "identity.json").exists()
 
 

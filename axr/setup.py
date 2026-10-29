@@ -186,8 +186,26 @@ def paired_menu(console: Console, ident: Identity) -> int:
     return 0
 
 
+def utf8_console():
+    """The screen uses box and block characters. Old Windows consoles default to a code page that has none of them."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        except Exception:
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if enc != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def run(home: str | None = None, *, code: str | None = None, relay: str, name: str | None = None, sandbox: str = "process",
         max_jobs: int | None = None, install_service: bool = True, assume_yes: bool = False) -> int:
+    utf8_console()
     console = Console()
     console.print()
     banner(console)

@@ -48,13 +48,13 @@ def install(home: Path | None = None) -> str:
 <plist version="1.0"><dict>
 <key>Label</key><string>{LABEL}</string>
 <key>ProgramArguments</key><array>{args}</array>
-<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
 <key>StandardOutPath</key><string>{log}</string><key>StandardErrorPath</key><string>{log}</string>
 </dict></plist>
 """)
         subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
         subprocess.run(["launchctl", "load", "-w", str(p)], check=True, capture_output=True)
-        return f"Installed a LaunchAgent ({p}); the helper starts at login and restarts if it stops."
+        return f"Installed a LaunchAgent ({p}); the helper starts at login and restarts if it crashes."
     u = _systemd_unit()
     u.parent.mkdir(parents=True, exist_ok=True)
     u.write_text(f"""[Unit]
@@ -64,7 +64,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart={' '.join(_q(a) for a in cmd)}
-Restart=always
+Restart=on-failure
 RestartSec=5
 Nice=5
 

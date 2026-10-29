@@ -102,12 +102,12 @@ class Worker:
 
     def _removed(self) -> str:
         log.warning("the owner removed this device: deleting its keys, cache and workspaces")
+        self.ident.wipe()   # first: removing the service below can stop this very process (launchd, systemd)
         try:
             from .service import uninstall
             uninstall(quiet=True)
         except Exception:
             pass
-        self.ident.wipe()
         return "removed"
 
     async def _serve(self, sess: Session):
